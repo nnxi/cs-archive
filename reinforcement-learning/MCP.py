@@ -1,4 +1,5 @@
 import numpy as np
+np.set_printoptions(linewidth=np.inf, precision=3, suppress=True)
 
 # 배열 중 (i, j)가 있을 때, 상태 i에서 상태 j로 가는 행동을 뜻한다.
 
@@ -37,12 +38,10 @@ discountingRate = 0.9
 V = np.zeros(10)
 visitTimes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 Returns = np.zeros(10)
-t = 0
 
 def generateEp():
     ep = []
     current = 0
-    p = 0
 
     # S0부터 출발
     firstStep = [0, -1, -1, -1, -1, -1, -1, -1, -1, -1]
@@ -50,12 +49,10 @@ def generateEp():
 
     count = 1
     while current != 9:
-        print('gen ', str(t), ', ', str(p))
-        p += 1
-
+        # 각 행의 확률에 맞게 다음 상태 랜덤으로 지정
         candidates = np.arange(len(policy[current]))
-
         next = np.random.choice(candidates, 1, p=policy[current])[0]
+
         ep.append((next, rewardList[current, next]))
 
         if firstStep[next] == -1:
@@ -70,10 +67,9 @@ def generateEp():
 
     return ep, firstStep
 
-for _ in range(30000):
+for t in range(1, 1000001):
+    # 에피소드 생성
     ep, firstStep = generateEp()
-    print('gen ' + str(t))
-    t += 1
 
     if ep is None:
         continue
@@ -83,10 +79,12 @@ for _ in range(30000):
 
     nextReward = ep[-1][1]
     
+    # 마지막 종료 상태를 슬라이스 하고 역으로 for문 실행
     for i in reversed(ep[:-1]):
         G = G * discountingRate + nextReward
         curStep -= 1
 
+        # 첫 번째 방문일 때만 가치함수에 적용
         if curStep == firstStep[i[0]]:
             Returns[i[0]] += G
             visitTimes[i[0]] += 1
@@ -94,4 +92,31 @@ for _ in range(30000):
 
         nextReward = i[1]
 
-print(V)
+    # 아래로 과정, 결과 출력문
+    if t == 100:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
+    elif t == 500:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
+    elif t == 1000:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
+    elif t == 5000:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
+    elif t == 10000:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
+    elif t == 50000:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
+    elif t == 100000:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
+    elif t == 500000:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
+    elif t == 1000000:
+        print('\n', str(t), '번째 예측된 가치함수:')
+        print(V)
