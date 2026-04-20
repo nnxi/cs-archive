@@ -15,7 +15,7 @@ int main() {
 
     // L1 출력
     int tmp;
-    cout << "\nL1 : ";
+    cout << "\nlinked_L1 : ";
     printList(L1);
 
     // L1 두 번째 원소 삭제
@@ -23,7 +23,7 @@ int main() {
     cout << "\nL1.Delete(2)\n";
 
     // L1 출력
-    cout << "\nL1 : ";
+    cout << "\nlinked_L1 : ";
     printList(L1);
 
     // L2 생성 (복사생성자 호출)
@@ -31,9 +31,9 @@ int main() {
     cout << "\nL2 생성\n";
 
     // L1, L2 출력
-    cout << "\nL1 : ";
+    cout << "\nlinked_L1 : ";
     printList(L1);
-    cout << "L2 : ";
+    cout << "linked_L2 : ";
     printList(L2);
 
     // L2 첫 번째 원소 삭제
@@ -41,9 +41,9 @@ int main() {
     cout << "\nL2.Delete(1)\n";
 
     // L1, L2 출력
-    cout << "\nL1 : ";
+    cout << "\nlinked_L1 : ";
     printList(L1);
-    cout << "L2 : ";
+    cout << "linked_L2 : ";
     printList(L2);
 }
 

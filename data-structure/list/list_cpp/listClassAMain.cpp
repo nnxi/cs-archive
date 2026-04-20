@@ -47,6 +47,7 @@ int main() {
     printList(L2);
 }
 
+// 출력 전용 함수
 void printList(listClass L) {
     int tmp;
 

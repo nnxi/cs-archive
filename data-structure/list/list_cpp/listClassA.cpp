@@ -14,7 +14,7 @@ listClass::listClass(const listClass& L) {
     }
 }
 
-listClass::~listClass( ) {}
+listClass::~listClass() {}
 
 void listClass::Insert(int Position, int Item) {
     if (Count >= MAX) {
