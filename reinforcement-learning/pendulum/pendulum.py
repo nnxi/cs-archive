@@ -7,8 +7,7 @@ from keras.layers import Dense, Input
 from keras.models import Model
 from keras.optimizers import Adam
 
-EPISODES = 1000
-
+EPISODES = 5000
 
 class A2CAgent:
     def __init__(self, state_size, action_size):
@@ -18,63 +17,60 @@ class A2CAgent:
         self.action_size = action_size
         self.value_size = 1
 
-        # 하이퍼파라미터
         self.discount_factor = 0.99
         self.actor_lr = 0.0001
-        self.critic_lr = 0.001
+        self.critic_lr = 0.0002
 
-        # 정책신경망과 가치신경망 생성
         self.actor = self.build_actor()
         self.critic = self.build_critic()
 
         self.actor_optimizer = Adam(learning_rate=self.actor_lr)
         self.critic_optimizer = Adam(learning_rate=self.critic_lr)
 
-        # On-policy 배치 학습을 위한 메모리 버퍼
         self.states = []
         self.actions = []
         self.rewards = []
         self.next_states = []
         self.dones = []
 
-    # actor: 연속적 행동을 위한 mu와 sigma 출력 구조 유지
     def build_actor(self):
         state_input = Input(shape=(self.state_size,))
-        h1 = Dense(64, activation='relu', kernel_initializer='he_uniform')(state_input)
-        h2 = Dense(64, activation='relu', kernel_initializer='he_uniform')(h1)
+        h1 = Dense(128, activation='relu')(state_input)
+        h2 = Dense(128, activation='relu')(h1)
 
-        mu = Dense(self.action_size, activation='tanh', kernel_initializer='he_uniform')(h2)
+        mu = Dense(self.action_size, activation='tanh')(h2)
         mu = mu * 2.0
 
-        sigma = Dense(self.action_size, activation='softplus', kernel_initializer='he_uniform')(h2)
-        sigma = sigma + 1e-5
+        sigma = Dense(self.action_size, activation='softplus')(h2)
 
         actor = Model(inputs=state_input, outputs=[mu, sigma])
         actor.summary()
         return actor
 
-    # critic: 상태 가치 V(s) 예측망 구조 유지
     def build_critic(self):
         state_input = Input(shape=(self.state_size,))
-        h1 = Dense(64, activation='relu', kernel_initializer='he_uniform')(state_input)
-        h2 = Dense(64, activation='relu', kernel_initializer='he_uniform')(h1)
-        value = Dense(self.value_size, activation='linear', kernel_initializer='he_uniform')(h2)
+        h1 = Dense(128, activation='relu')(state_input)
+        h2 = Dense(128, activation='relu')(h1)
+        value = Dense(self.value_size, activation='linear')(h2)
 
         critic = Model(inputs=state_input, outputs=value)
         critic.summary()
         return critic
 
-    # 정규분포 기반 액션 샘플링 및 클리핑
     def get_action(self, state):
         mu, sigma = self.actor(state)
+
         mu = mu.numpy()[0][0]
         sigma = sigma.numpy()[0][0]
 
+        # 탐험 변동성 제어를 위한 시그마 클리핑
+        sigma = np.clip(sigma, 0.1, 1.0)
+
         action = np.random.normal(mu, sigma, 1)
         action = np.clip(action, -2.0, 2.0)
-        return action
 
-    # 스텝별 데이터를 임시 저장하는 함수
+        return action.astype(np.float32)
+
     def store_transition(self, state, action, reward, next_state, done):
         self.states.append(state[0])
         self.actions.append(action)
@@ -82,55 +78,79 @@ class A2CAgent:
         self.next_states.append(next_state[0])
         self.dones.append([float(done)])
 
-    # @tf.function 데코레이터로 C++ 내부 정적 연산 그래프로 JIT 컴파일 가속화
     @tf.function
     def train_batch(self, states, actions, targets, advantages):
-        # 1. Actor 업데이트 연산
+        # 1. Actor 업데이트
         with tf.GradientTape() as tape:
             mu, sigma = self.actor(states)
+            sigma = tf.clip_by_value(sigma, 0.1, 1.0)
             variance = tf.square(sigma)
 
-            # 가우시안 로그 확률 밀도 함수 계산
             log_prob = -0.5 * tf.math.log(2 * np.pi * variance) - tf.square(actions - mu) / (2 * variance)
-            log_prob = tf.reduce_sum(log_prob, axis=-1)
+            log_prob = tf.reduce_sum(log_prob, axis=1)
 
             entropy = 0.5 * tf.math.log(2 * np.pi * np.e * variance)
-            entropy = tf.reduce_sum(entropy, axis=-1)
+            entropy = tf.reduce_sum(entropy, axis=1)
 
-            actor_loss = -tf.reduce_mean(log_prob * advantages + 0.01 * entropy)
+            # Critic 그라디언트 유입 차단 및 엔트로피 계수 설정
+            actor_loss = -tf.reduce_mean(log_prob * tf.stop_gradient(advantages) + 0.001 * entropy)
 
         actor_grads = tape.gradient(actor_loss, self.actor.trainable_variables)
+        
+        # Actor 그라디언트 폭발 방지 클리핑
+        actor_grads, _ = tf.clip_by_global_norm(actor_grads, 0.5)
         self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor.trainable_variables))
 
-        # 2. Critic 업데이트 연산
+        # 2. Critic 업데이트
         with tf.GradientTape() as tape:
             value_pred = self.critic(states)
-            critic_loss = tf.reduce_mean(tf.square(targets - value_pred))
+            # 이상치에 덜 민감한 Huber Loss 적용
+            critic_loss = tf.reduce_mean(tf.keras.losses.Huber()(targets, value_pred))
 
         critic_grads = tape.gradient(critic_loss, self.critic.trainable_variables)
+        
+        # Critic 그라디언트 폭발 방지 클리핑
+        critic_grads, _ = tf.clip_by_global_norm(critic_grads, 0.5)
         self.critic_optimizer.apply_gradients(zip(critic_grads, self.critic.trainable_variables))
 
-    # 에피소드 종료 후 수집한 200스텝의 데이터를 한 번에 일괄 학습
     def train_model(self):
-        states = tf.convert_to_tensor(np.array(self.states), dtype=tf.float32)
-        actions = tf.convert_to_tensor(np.array(self.actions), dtype=tf.float32)
-        rewards = tf.convert_to_tensor(np.array(self.rewards), dtype=tf.float32)
-        next_states = tf.convert_to_tensor(np.array(self.next_states), dtype=tf.float32)
-        dones = tf.convert_to_tensor(np.array(self.dones), dtype=tf.float32)
+        states = np.array(self.states, dtype=np.float32)
+        actions = np.array(self.actions, dtype=np.float32)
+        rewards = np.array(self.rewards, dtype=np.float32).flatten()
+        dones = np.array(self.dones, dtype=np.float32).flatten()
 
-        # 배치 전체에 대한 예측 가치 추출
-        values = self.critic(states)
-        next_values = self.critic(next_states)
+        values = self.critic(states).numpy().flatten()
+        next_value = 0.0
 
-        # 일괄 TD Target 및 Advantage 계산
-        targets = rewards + self.discount_factor * next_values * (1.0 - dones)
+        # 에피소드가 끝나지 않고 20스텝이 찬 경우, 마지막 상태의 가치를 부트스트랩
+        if dones[-1] == 0:
+            next_state = np.array([self.next_states[-1]], dtype=np.float32)
+            next_value = self.critic(next_state).numpy()[0, 0]
+
+        targets = np.zeros_like(rewards)
+        running_target = next_value
+
+        # 역순으로 n-step Return 계산 (핵심 로직)
+        for t in reversed(range(len(rewards))):
+            running_target = rewards[t] + self.discount_factor * running_target * (1 - dones[t])
+            targets[t] = running_target
+
+        # Advantage 계산 및 정규화
         advantages = targets - values
+        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-8)
 
-        # 컴파일된 가속 함수 호출
-        self.train_batch(states, actions, targets, advantages)
+        self.train_batch(
+            tf.convert_to_tensor(states),
+            tf.convert_to_tensor(actions),
+            tf.convert_to_tensor(targets.reshape(-1, 1), dtype=tf.float32),
+            tf.convert_to_tensor(advantages, dtype=tf.float32)
+        )
 
-        # 다음 에피소드를 위해 메모리 버퍼 클리어
-        self.states, self.actions, self.rewards, self.next_states, self.dones = [], [], [], [], []
+        self.states.clear()
+        self.actions.clear()
+        self.rewards.clear()
+        self.next_states.clear()
+        self.dones.clear()
 
 
 if __name__ == "__main__":
@@ -155,23 +175,28 @@ if __name__ == "__main__":
             next_state = np.reshape(next_state, [1, state_size])
 
             done = terminated or truncated
+
+            # 순정 보상 스케일링 유지
             scaled_reward = reward / 10.0
 
-            # 실시간 업데이트 대신 메모리 버퍼에 데이터 누적
             agent.store_transition(state, action, scaled_reward, next_state, done)
 
             score += reward
             state = next_state
 
-        # 에피소드가 완전히 완료(200스텝 도달)된 후 배치 단위 고속 업데이트 수행
-        agent.train_model()
+            # 20스텝 도달 또는 에피소드 종료 시 학습
+            if len(agent.states) >= 20 or done:
+                agent.train_model()
 
-        # 출력 및 시각화용 로그 기록
         scores.append(score)
         episodes.append(e)
 
-        # 10 에피소드마다 터미널에 중간 진척도 모니터링 출력
         if (e + 1) % 10 == 0:
             pylab.plot(episodes, scores, 'b')
             pylab.savefig("./pendulum_a2c.png")
             print(f"episode: {e + 1:4d} | score: {score:.2f}")
+
+    agent.actor.save_weights("./pendulum_actor.weights.h5")
+    print("모델 가중치 저장 완료: ./pendulum_actor.weights.h5")
+
+    env.close()
