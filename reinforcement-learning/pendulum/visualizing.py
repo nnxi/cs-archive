@@ -52,6 +52,8 @@ if __name__ == "__main__":
         while not done:
             # 결정론적(Deterministic) 최적 액션 선택
             action = agent.get_action_determinstic(state)
+
+            print(f"Current Torque: {action[0]:.5f}")
             
             next_state, reward, terminated, truncated, info = env.step(action)
             state = np.reshape(next_state, [1, state_size])

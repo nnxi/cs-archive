@@ -83,7 +83,7 @@ class A2CAgent:
         # 1. Actor 업데이트
         with tf.GradientTape() as tape:
             mu, sigma = self.actor(states)
-            sigma = tf.clip_by_value(sigma, 0.1, 1.0)
+            sigma = tf.clip_by_value(sigma, 0.01, 1.0)
             variance = tf.square(sigma)
 
             log_prob = -0.5 * tf.math.log(2 * np.pi * variance) - tf.square(actions - mu) / (2 * variance)
@@ -130,7 +130,7 @@ class A2CAgent:
         targets = np.zeros_like(rewards)
         running_target = next_value
 
-        # 역순으로 n-step Return 계산 (핵심 로직)
+        # 역순으로 20-step Return 계산
         for t in reversed(range(len(rewards))):
             running_target = rewards[t] + self.discount_factor * running_target * (1 - dones[t])
             targets[t] = running_target
@@ -176,8 +176,11 @@ if __name__ == "__main__":
 
             done = terminated or truncated
 
-            # 순정 보상 스케일링 유지
-            scaled_reward = reward / 10.0
+            cos_theta = next_state[0][0]
+            sin_theta = next_state[0][1]
+
+            theta_err = np.arctan2(sin_theta, cos_theta)
+            scaled_reward = (reward / 5.0) - np.abs(theta_err) * 0.5
 
             agent.store_transition(state, action, scaled_reward, next_state, done)
 
